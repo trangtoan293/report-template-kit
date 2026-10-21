@@ -1,0 +1,296 @@
+# 2026-10-15: Recycle PDF engines after each attempt and shut down idle engines.
+# v1.5.4: Production UI selectors survive stripped data-test attributes; includes OCI storage hotfix.
+# v1.5.3: OCI S3 compatibility writes use PostgreSQL advisory locks; no schema changes.
+# Auto selects postgres_advisory for OCI S3 compatibility; other endpoints use s3.
+# All web/worker writers must use this hotfix and the SAME PostgreSQL metadata DB.
+# Pause export/edit requests and stop old writers before upgrading all pods.
+# This cooperative lock is not an atomic PostgreSQL+S3 transaction; see ORACLE_S3_HOTFIX.md.
+reportingStorage:
+  writeMode: auto
+  lockTimeoutSeconds: 5
+configOverrides:
+  reporting_storage: |
+    import os as _reporting_storage_os
+    REPORTING_S3_WRITE_MODE = _reporting_storage_os.environ.get("REPORTING_S3_WRITE_MODE", {{ .Values.reportingStorage.writeMode | quote }})
+    REPORTING_S3_LOCK_TIMEOUT_SECONDS = int(_reporting_storage_os.environ.get("REPORTING_S3_LOCK_TIMEOUT_SECONDS", {{ .Values.reportingStorage.lockTimeoutSeconds | quote }}))
+# v1.5.1: Latest-PDF dialogs use existing job metadata and dedicated workers; no new resources.
+# v1.5.0: Admin-managed published templates; apply with both updated reporting overlays.
+# Generated combined deployment: append LAST after both feature overlays.
+# Regenerate after editing either feature's container/volume definitions:
+# py -3.11 upgrade/dashboard-export/package_combined.py
+# Both converters share reportPdf.fontBundleKey / fontBundleSha256.
+# dashboardExport.fontFamily selects the dashboard font from that bundle.
+# reportExportWorker.enabled remains the original optional worker toggle.
+# No credentials, query changes or Report Builder configuration are replaced.
+# Dashboard jobs run in independent pods. Web keeps LibreOffice for Report Builder.
+# Export dashboard / Export chart v1.5.0 use the same worker and converters; no extra container.
+# Change replicas here, or pass --set dashboardExport.replicas=2 to Helm.
+dashboardExport:
+  deploymentMode: dedicated
+  replicas: 1
+extraVolumes:
+- name: report-pdf-fonts
+  emptyDir:
+    sizeLimit: 300Mi
+extraVolumeMounts:
+- name: report-pdf-fonts
+  mountPath: /app/report-pdf
+  readOnly: true
+supersetNode:
+  extraInitContainers:
+  - name: report-pdf-fonts
+    image: '{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}'
+    imagePullPolicy: '{{ .Values.image.pullPolicy }}'
+    command:
+    - /bin/sh
+    - -ec
+    - 'export PYTHONPATH="/app/pythonpath:${PYTHONPATH:-}"
+
+      exec python /app/pythonpath/customsso/rt_pdf_fonts.py
+
+      '
+    envFrom:
+    - secretRef:
+        name: '{{ tpl .Values.envFromSecret . }}'
+    env:
+    - name: REPORT_PDF_FONT_KEY
+      value: '{{ .Values.reportPdf.fontBundleKey }}'
+    - name: REPORT_PDF_FONT_SHA256
+      value: '{{ .Values.reportPdf.fontBundleSha256 }}'
+    - name: REPORT_PDF_EXTRA_ENV_B64
+      value: '{{ .Values.extraEnv | toJson | b64enc }}'
+    securityContext:
+      runAsUser: 0
+      allowPrivilegeEscalation: false
+    volumeMounts:
+    - name: superset-extra-config
+      mountPath: /app/pythonpath/customsso
+      readOnly: true
+    - name: report-pdf-fonts
+      mountPath: /app/report-pdf
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: '1'
+        memory: 768Mi
+  extraContainers:
+  - name: report-pdf
+    image: '{{ .Values.reportPdf.image }}'
+    imagePullPolicy: '{{ .Values.reportPdf.pullPolicy }}'
+    args:
+    - /bin/sh
+    - -ec
+    - 'fc-cache -f /usr/local/share/fonts/report-builder
+
+      fc-list --format=''%{family}\n'' > /usr/local/share/fonts/report-builder/installed-fonts.tmp
+
+      mv /usr/local/share/fonts/report-builder/installed-fonts.tmp /usr/local/share/fonts/report-builder/installed-fonts.txt
+
+      exec gotenberg
+
+      '
+    env:
+    - name: API_BIND_IP
+      value: 127.0.0.1
+    - name: API_TIMEOUT
+      value: '{{ .Values.reportPdf.timeoutSeconds | int }}s'
+    - name: API_BODY_LIMIT
+      value: 45MB
+    - name: API_DISABLE_DOWNLOAD_FROM
+      value: 'true'
+    - name: LIBREOFFICE_AUTO_START
+      value: 'false'
+    - name: LIBREOFFICE_RESTART_AFTER
+      value: '1'
+    - name: LIBREOFFICE_IDLE_SHUTDOWN_TIMEOUT
+      value: 60s
+    - name: LIBREOFFICE_MAX_QUEUE_SIZE
+      value: '10'
+    - name: LIBREOFFICE_DENY_LIST
+      value: .*
+    - name: WEBHOOK_DISABLE
+      value: 'true'
+    - name: OTEL_TRACES_EXPORTER
+      value: none
+    - name: OTEL_METRICS_EXPORTER
+      value: none
+    - name: OTEL_LOGS_EXPORTER
+      value: none
+    securityContext:
+      runAsUser: 1001
+      runAsGroup: 1001
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+    volumeMounts:
+    - name: report-pdf-fonts
+      mountPath: /usr/local/share/fonts/report-builder
+    startupProbe:
+      exec:
+        command:
+        - curl
+        - --fail
+        - --silent
+        - --max-time
+        - '3'
+        - http://127.0.0.1:3000/health
+      periodSeconds: 5
+      timeoutSeconds: 5
+      failureThreshold: 36
+    readinessProbe:
+      exec:
+        command:
+        - curl
+        - --fail
+        - --silent
+        - --max-time
+        - '3'
+        - http://127.0.0.1:3000/health
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    livenessProbe:
+      exec:
+        command: [curl, --fail, --silent, --max-time, '3', 'http://127.0.0.1:3000/health']
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: '2'
+        memory: 2Gi
+  - name: dashboard-export-pdf
+    image: '{{ .Values.dashboardExport.pdfImage }}'
+    imagePullPolicy: '{{ .Values.dashboardExport.imagePullPolicy }}'
+    args:
+    - /bin/sh
+    - -ec
+    - 'fc-cache -f /usr/local/share/fonts/dashboard-export
+
+      exec gotenberg
+
+      '
+    volumeMounts:
+    - name: report-pdf-fonts
+      mountPath: /usr/local/share/fonts/dashboard-export
+    env:
+    - name: API_BIND_IP
+      value: 127.0.0.1
+    - name: API_PORT
+      value: '3001'
+    - name: API_TIMEOUT
+      value: 1200s
+    - name: API_BODY_LIMIT
+      value: 110MB
+    - name: API_DISABLE_DOWNLOAD_FROM
+      value: 'true'
+    - name: CHROMIUM_AUTO_START
+      value: 'false'
+    - name: CHROMIUM_RESTART_AFTER
+      value: '1'
+    - name: CHROMIUM_IDLE_SHUTDOWN_TIMEOUT
+      value: 60s
+    - name: CHROMIUM_MAX_CONCURRENCY
+      value: '1'
+    - name: CHROMIUM_MAX_QUEUE_SIZE
+      value: '2'
+    - name: CHROMIUM_DISABLE_JAVASCRIPT
+      value: 'true'
+    - name: CHROMIUM_DENY_LIST
+      value: ^https?://.*,^file:(?!///tmp/).*
+    - name: WEBHOOK_DISABLE
+      value: 'true'
+    - name: OTEL_TRACES_EXPORTER
+      value: none
+    - name: OTEL_METRICS_EXPORTER
+      value: none
+    - name: OTEL_LOGS_EXPORTER
+      value: none
+    securityContext:
+      runAsUser: 1001
+      runAsGroup: 1001
+      runAsNonRoot: true
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+        - ALL
+    startupProbe:
+      exec:
+        command:
+        - curl
+        - --fail
+        - --silent
+        - --max-time
+        - '3'
+        - http://127.0.0.1:3001/health
+      periodSeconds: 5
+      timeoutSeconds: 5
+      failureThreshold: 36
+    readinessProbe:
+      exec:
+        command:
+        - curl
+        - --fail
+        - --silent
+        - --max-time
+        - '3'
+        - http://127.0.0.1:3001/health
+      periodSeconds: 10
+      timeoutSeconds: 5
+    livenessProbe:
+      exec:
+        command: [curl, --fail, --silent, --max-time, '3', 'http://127.0.0.1:3001/health']
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 6
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+        ephemeral-storage: 256Mi
+      limits:
+        cpu: '2'
+        memory: 2Gi
+        ephemeral-storage: 2Gi
+  - name: dashboard-export-worker
+    image: '{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}'
+    imagePullPolicy: '{{ .Values.image.pullPolicy }}'
+    command:
+    - /bin/sh
+    - -ec
+    - 'export PYTHONPATH="{{ .Values.configMountPath }}:${PYTHONPATH:-}"
+
+      exec python {{ .Values.extraConfigMountPath }}/dr_worker.py
+
+      '
+    envFrom:
+    - secretRef:
+        name: '{{ tpl .Values.envFromSecret . }}'
+    env:
+    - name: SUPERSET_CONFIG_PATH
+      value: '{{ .Values.configMountPath }}/superset_config.py'
+    - name: DASHBOARD_EXPORT_EXTRA_ENV_B64
+      value: '{{ merge (deepCopy (.Values.supersetNode.env | default dict)) .Values.extraEnv | toJson | b64enc }}'
+    volumeMounts:
+    - name: superset-config
+      mountPath: '{{ .Values.configMountPath }}'
+      readOnly: true
+    - name: superset-extra-config
+      mountPath: '{{ .Values.extraConfigMountPath }}'
+      readOnly: true
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+        ephemeral-storage: 256Mi
+      limits:
+        cpu: '2'
+        memory: 3Gi
+        ephemeral-storage: 2Gi

@@ -12,7 +12,8 @@ Plugin Claude Code: chuyển **báo cáo mẫu** (PDF/Word ngân hàng) thành *
 ```
 Cập nhật bản mới: `/plugin marketplace update report-template-kit` rồi `/reload-plugins`.
 Yêu cầu máy: Node ≥ 18 + `npm i -g docx@9`; Python 3 + `pip install pymupdf openpyxl`; LibreOffice (`soffice`).
-Plugin không kèm PDF mẫu và các file `values-*.yaml`: đặt chúng trong thư mục dự án của bạn.
+Plugin kèm 3 file Helm values mẫu (v1.5.4) ở `skills/report-to-docx-template/examples/superset-values/`;
+nếu dự án có bản đang deploy thì dùng bản của dự án. PDF mẫu không kèm theo: đặt trong thư mục dự án.
 Dữ liệu nhập tay trong `examples/bm01-bm07/samples.py` đã được ẩn danh.
 
 ## Dùng
@@ -65,6 +66,7 @@ report-template-kit/
     │   └── catalog.md                 # PDF mẫu → template
     ├── scripts/
     │   ├── sync_engine.py  check_template.py  pdf_probe.py  docx_kit.js
+    ├── examples/superset-values/     # values-report-builder / dashboard-export / reporting-combined (mẫu)
     └── examples/bm01-bm07/      # nguồn BM01–BM07 + BM04M (multi_row) + DB01 (dashboard)
 ```
 

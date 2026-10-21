@@ -38,6 +38,9 @@ mkdir -p Templates/_src && cd Templates/_src
 cp <SKILL_DIR>/scripts/{docx_kit.js,check_template.py,pdf_probe.py,sync_engine.py} .
 python3 sync_engine.py . <path>/values-report-builder.yaml [<path>/values-dashboard-export.yaml]   # -> customsso/
 ```
+Ưu tiên file `values-*.yaml` của dự án (đúng bản đang deploy). Dự án chưa có thì dùng bản mẫu đi kèm plugin
+(v1.5.4, 2026-10): `<SKILL_DIR>/examples/superset-values/values-report-builder.yaml`,
+`values-dashboard-export.yaml`, `values-reporting-combined.yaml`.
 Yêu cầu: Node + `docx` (`npm i -g docx@9`), Python 3 + `pymupdf openpyxl`, LibreOffice (`soffice`).
 PDF mẫu đặt ở thư mục gốc dự án (cha của `Templates/`). Luôn sync lại khi YAML đổi phiên bản.
 
@@ -116,5 +119,6 @@ Checklist bàn giao: `references/pitfalls.md`.
 - `scripts/check_template.py` — kiểm tra/điền thử/PDF cho 3 chế độ bằng đúng code server.
 - `scripts/pdf_probe.py` — dòng + toạ độ, gợi ý mép cột số.
 - `scripts/docx_kit.js` — helper dựng docx.
+- `examples/superset-values/` — 3 file Helm values mẫu (Report Builder, Dashboard Export, combined overlay).
 - `examples/bm01-bm07/` — nguồn hoàn chỉnh 7 báo cáo + ví dụ multi_row (BM04M) + dashboard (DB01).
 - `references/catalog.md` — PDF mẫu → template, số biến, grain, chế độ khuyến nghị.
