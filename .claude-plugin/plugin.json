@@ -1,0 +1,17 @@
+{
+  "name": "report-template-kit",
+  "version": "1.2.0",
+  "description": "Chuyển báo cáo mẫu (PDF/Word) thành template DOCX {#bien#} cho Superset Report Builder (per_row / multi_row lặp dòng bảng) và Dashboard Export, kèm đặc tả dataset, SQL Oracle và kiểm tra bằng đúng engine trong values YAML. Kèm status line + panel tiến độ B0–B7 (/report-template-progress).",
+  "author": {
+    "name": "trangtoan293",
+    "url": "https://github.com/trangtoan293"
+  },
+  "keywords": [
+    "superset",
+    "report-builder",
+    "docx",
+    "template",
+    "banking"
+  ],
+  "types": "./types/index.d.ts"
+}

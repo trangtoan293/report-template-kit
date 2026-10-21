@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "report-template-kit",
+  "description": "Bộ công cụ chuyển báo cáo mẫu thành template DOCX cho Superset Report Builder / Dashboard Export.",
+  "owner": {
+    "name": "trangtoan293",
+    "url": "https://github.com/trangtoan293"
+  },
+  "plugins": [
+    {
+      "name": "report-template-kit",
+      "description": "Báo cáo mẫu -> template DOCX {#bien#} + dataset spec + SQL + kiểm tra engine.",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}
